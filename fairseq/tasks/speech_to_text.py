@@ -130,7 +130,7 @@ class SpeechToTextTask(LegacyFairseqTask):
             )
         return criterions.build_criterion(args, self)
 
-    def load_dataset(self, split, epoch=1, combine=False, **kwargs):
+    def load_dataset(self, split, epoch=1, combine=False, resegment=False, **kwargs):
         is_train_split = split.startswith("train")
         pre_tokenizer = self.build_tokenizer(self.args)
         bpe_tokenizer = self.build_bpe(self.args)
@@ -146,6 +146,7 @@ class SpeechToTextTask(LegacyFairseqTask):
             seed=self.args.seed,
             speaker_to_id=self.speaker_to_id,
             multitask=self.multitask_tasks,
+            resegment=resegment,
         )
 
     @property

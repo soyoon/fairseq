@@ -40,30 +40,45 @@ class SacrebleuConfig(FairseqDataclass):
     sacrebleu_char_level: bool = field(
         default=False, metadata={"help": "evaluate at character level"}
     )
-
+    sacrebleu_resegment: bool = field(
+        default=False, metadata={"help": "resegmentation using mwerSegment"}
+    )
+    refs_path: str = field(
+        default="refs.txt", metadata={"help": "reference text file path"}
+    )
 
 @register_scorer("sacrebleu", dataclass=SacrebleuConfig)
 class SacrebleuScorer(BaseScorer):
     def __init__(self, cfg):
         super(SacrebleuScorer, self).__init__(cfg)
-        import sacrebleu
+        from sacrebleu import BLEU
 
-        self.sacrebleu = sacrebleu
+        self.bleu_metric = BLEU(tokenize="none")
         self.tokenizer = EvaluationTokenizer(
             tokenizer_type=cfg.sacrebleu_tokenizer,
             lowercase=cfg.sacrebleu_lowercase,
             character_tokenization=cfg.sacrebleu_char_level,
         )
+        self.resegment = cfg.sacrebleu_resegment
 
     def add_string(self, ref, pred):
         self.ref.append(self.tokenizer.tokenize(ref))
         self.pred.append(self.tokenizer.tokenize(pred))
 
+    def set_refs(self, refs):
+        self.ref = [ self.tokenizer.tokenize(ref) for ref in refs ]
+
+    def set_preds(self, preds):
+        self.pred = [ self.tokenizer.tokenize(pred) for pred in preds ]
+
     def _score(self, order=4):
         if order != 4:
             raise NotImplementedError
         # tokenization and lowercasing are performed by self.tokenizer instead.
-        return self.sacrebleu.corpus_bleu(self.pred, [self.ref], tokenize="none")
+        if self.resegment:
+            self.pred = self.bleu_metric.resegment(self.pred, [self.ref])
+
+        return self.bleu_metric.corpus_score(self.pred, [self.ref])
 
     def score(self, order=4):
         return self._score(order).score

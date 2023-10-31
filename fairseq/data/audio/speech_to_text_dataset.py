@@ -89,6 +89,7 @@ class SpeechToTextDataset(FairseqDataset):
         n_frames_per_step=1,
         speaker_to_id=None,
         append_eos=True,
+        resegment: bool = False,
     ):
         self.split, self.is_train_split = split, is_train_split
         self.cfg = cfg
@@ -137,7 +138,7 @@ class SpeechToTextDataset(FairseqDataset):
 
         self.tgt_lens = self.get_tgt_lens_and_check_oov()
         self.append_eos = append_eos
-
+        self.resegment = resegment
         logger.info(self.__repr__())
 
     def get_tgt_lens_and_check_oov(self):
@@ -262,7 +263,7 @@ class SpeechToTextDataset(FairseqDataset):
         source = self.pack_frames(source)
 
         target = None
-        if self.tgt_texts is not None:
+        if self.tgt_texts is not None and not self.resegment:
             tokenized = self.get_tokenized_tgt_text(indices if has_concat else index)
             target = self.tgt_dict.encode_line(
                 tokenized, add_if_not_exist=False, append_eos=self.append_eos
@@ -313,7 +314,7 @@ class SpeechToTextDataset(FairseqDataset):
         target, target_lengths = None, None
         prev_output_tokens = None
         ntokens = None
-        if self.tgt_texts is not None:
+        if self.tgt_texts is not None and not self.resegment:
             target = fairseq_data_utils.collate_tokens(
                 [x.target for x in samples],
                 self.tgt_dict.pad(),
@@ -550,7 +551,7 @@ class SpeechToTextDatasetCreator(object):
     KEY_SPEAKER, KEY_SRC_TEXT = "speaker", "src_text"
     KEY_SRC_LANG, KEY_TGT_LANG = "src_lang", "tgt_lang"
     # default values
-    DEFAULT_SPEAKER = DEFAULT_SRC_TEXT = DEFAULT_LANG = ""
+    DEFAULT_SPEAKER = DEFAULT_SRC_TEXT = DEFAULT_LANG = DEFAULT_TGT_TEXT = ""
 
     @classmethod
     def _from_list(
@@ -565,12 +566,13 @@ class SpeechToTextDatasetCreator(object):
         n_frames_per_step,
         speaker_to_id,
         multitask: Optional[Dict] = None,
+        resegment: bool = False,
     ) -> SpeechToTextDataset:
         audio_root = Path(cfg.audio_root)
         ids = [s[cls.KEY_ID] for s in samples]
         audio_paths = [(audio_root / s[cls.KEY_AUDIO]).as_posix() for s in samples]
         n_frames = [int(s[cls.KEY_N_FRAMES]) for s in samples]
-        tgt_texts = [s[cls.KEY_TGT_TEXT] for s in samples]
+        tgt_texts = [s.get(cls.KEY_TGT_TEXT, cls.DEFAULT_TGT_TEXT) for s in samples]
         src_texts = [s.get(cls.KEY_SRC_TEXT, cls.DEFAULT_SRC_TEXT) for s in samples]
         speakers = [s.get(cls.KEY_SPEAKER, cls.DEFAULT_SPEAKER) for s in samples]
         src_langs = [s.get(cls.KEY_SRC_LANG, cls.DEFAULT_LANG) for s in samples]
@@ -598,6 +600,7 @@ class SpeechToTextDatasetCreator(object):
             bpe_tokenizer=bpe_tokenizer,
             n_frames_per_step=n_frames_per_step,
             speaker_to_id=speaker_to_id,
+            resegment=resegment,
         )
 
         if has_multitask:
@@ -673,6 +676,7 @@ class SpeechToTextDatasetCreator(object):
         n_frames_per_step,
         speaker_to_id,
         multitask: Optional[Dict] = None,
+        resegment: bool = False,
     ) -> SpeechToTextDataset:
         samples = cls._load_samples_from_tsv(root, split)
         return cls._from_list(
@@ -686,6 +690,7 @@ class SpeechToTextDatasetCreator(object):
             n_frames_per_step,
             speaker_to_id,
             multitask,
+            resegment,
         )
 
     @classmethod
@@ -703,6 +708,7 @@ class SpeechToTextDatasetCreator(object):
         n_frames_per_step: int = 1,
         speaker_to_id=None,
         multitask: Optional[Dict] = None,
+        resegment: bool = False,
     ) -> SpeechToTextDataset:
         datasets = [
             cls._from_tsv(
@@ -716,6 +722,7 @@ class SpeechToTextDatasetCreator(object):
                 n_frames_per_step=n_frames_per_step,
                 speaker_to_id=speaker_to_id,
                 multitask=multitask,
+                resegment=resegment,
             )
             for split in splits.split(",")
         ]

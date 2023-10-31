@@ -14,6 +14,7 @@ import os
 import sys
 from argparse import Namespace
 from itertools import chain
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -103,7 +104,7 @@ def _main(cfg: DictConfig, output_file):
     )
 
     # loading the dataset should happen after the checkpoint has been loaded so we can give it the saved task config
-    task.load_dataset(cfg.dataset.gen_subset, task_cfg=saved_cfg.task)
+    task.load_dataset(cfg.dataset.gen_subset, resegment=cfg.scoring.sacrebleu_resegment, task_cfg=saved_cfg.task)
 
     if cfg.generation.lm_path is not None:
         overrides["data"] = cfg.task.data
@@ -180,6 +181,11 @@ def _main(cfg: DictConfig, output_file):
         return x
 
     scorer = scoring.build_scorer(cfg.scoring, tgt_dict)
+
+    if cfg.scoring.sacrebleu_resegment:
+        orig_refs = load_targets_from_txt(cfg.scoring.refs_path)
+        scorer.set_ref(orig_refs)
+        reseg_hyps_dict = {}
 
     num_sentences = 0
     has_target = True
@@ -360,12 +366,18 @@ def _main(cfg: DictConfig, output_file):
                         scorer.add_string(target_str, detok_hypo_str)
                     else:
                         scorer.add(target_tokens, hypo_tokens)
+                elif cfg.scoring.sacrebleu_resegment and j == 0:
+                    reseg_hyps_dict[sample_id] = detok_hypo_str
 
         wps_meter.update(num_generated_tokens)
         progress.log({"wps": round(wps_meter.avg)})
         num_sentences += (
             sample["nsentences"] if "nsentences" in sample else sample["id"].numel()
         )
+
+    if cfg.scoring.sacrebleu_resegment:
+        hyps = [v for k,v in sorted(reseg_hyps_dict.items())]
+        scorer.set_pred(hyps)
 
     logger.info("NOTE: hypothesis and token scores are output in base 2")
     logger.info(
@@ -377,7 +389,7 @@ def _main(cfg: DictConfig, output_file):
             1.0 / gen_timer.avg,
         )
     )
-    if has_target:
+    if has_target or cfg.scoring.sacrebleu_resegment:
         if cfg.bpe and not cfg.generation.sacrebleu:
             if cfg.common_eval.post_process:
                 logger.warning(
@@ -397,6 +409,15 @@ def _main(cfg: DictConfig, output_file):
 
     return scorer
 
+def load_targets_from_txt(txt_path: str):
+        txt_path = Path(txt_path)
+        if not txt_path.is_file():
+            raise FileNotFoundError(f"Target label not found: {txt_path}")
+        with open(txt_path) as f:
+            targets = [ line.strip() for line in f ]
+        if len(targets) == 0:
+            raise ValueError(f"Empty target label: {txt_path}")
+        return targets
 
 def cli_main():
     parser = options.get_generation_parser()
@@ -409,6 +430,9 @@ def cli_main():
         help="Model architecture. For constructing tasks that rely on "
         "model args (e.g. `AudioPretraining`)",
     )
+    parser.add_argument("--ref_txt", "-ref", type=str, default="refs_txt.txt",
+                        help="reference text file path")
+
     args = options.parse_args_and_arch(parser)
     main(args)
 
