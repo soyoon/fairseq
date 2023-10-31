@@ -184,7 +184,7 @@ def _main(cfg: DictConfig, output_file):
 
     if cfg.scoring.sacrebleu_resegment:
         orig_refs = load_targets_from_txt(cfg.scoring.refs_path)
-        scorer.set_ref(orig_refs)
+        scorer.set_refs(orig_refs)
         reseg_hyps_dict = {}
 
     num_sentences = 0
@@ -377,7 +377,7 @@ def _main(cfg: DictConfig, output_file):
 
     if cfg.scoring.sacrebleu_resegment:
         hyps = [v for k,v in sorted(reseg_hyps_dict.items())]
-        scorer.set_pred(hyps)
+        scorer.set_preds(hyps)
 
     logger.info("NOTE: hypothesis and token scores are output in base 2")
     logger.info(
